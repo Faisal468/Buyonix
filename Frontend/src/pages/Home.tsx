@@ -317,24 +317,24 @@ const Home = () => {
         <div className="bg-white rounded-2xl shadow-lg p-12 mt-12">
           <div className="text-center mb-8">
             <h2 className="text-3xl font-bold text-gray-900 mb-2">Why Choose Buyonix?</h2>
-            <p className="text-gray-600">Experience the next generation of e-commerce with cutting-edge AI technology</p>
+            <p className="text-gray-600">Experience the next generation of e-commerce with our AI technology</p>
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div className="text-center">
-              <div className="text-5xl mb-4">🌿</div>
-              <h3 className="text-xl font-bold text-gray-900 mb-2">Virtual Try-On</h3>
-              <p className="text-gray-600">Upload your photo and see how products look on you before purchasing</p>
+              <div className="text-5xl mb-4"></div>
+              <h3 className="text-xl font-bold text-gray-900 mb-2">Recommendations</h3>
+              <p className="text-gray-600">Get personalized product recommendations based on your purchase history</p>
             </div>
             
             <div className="text-center">
-              <div className="text-5xl mb-4">📊</div>
+              <div className="text-5xl mb-4"></div>
               <h3 className="text-xl font-bold text-gray-900 mb-2">Smart Bargaining</h3>
               <p className="text-gray-600">Negotiate with our AI to get the best possible price on your favorite items</p>
             </div>
             
             <div className="text-center">
-              <div className="text-5xl mb-4">⚡</div>
+              <div className="text-5xl mb-4"></div>
               <h3 className="text-xl font-bold text-gray-900 mb-2">24/7 AI Assistant</h3>
               <p className="text-gray-600">Get instant help in English or Roman English anytime you need it</p>
             </div>

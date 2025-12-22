@@ -1,6 +1,6 @@
 import React, { useContext, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CartContext } from '../context/CartContextType';
+import { CartContext, type CartItem } from '../context/CartContextType';
 import { FaTrash, FaArrowLeft, FaHeart } from 'react-icons/fa';
 import Recommendations from '../components/Recommendations';
 
@@ -15,7 +15,6 @@ interface WishlistItem {
 const Checkout: React.FC = () => {
   const cartContext = useContext(CartContext);
   const navigate = useNavigate();
-  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [isTryOnOpen, setIsTryOnOpen] = useState(false);
   const [tryOnInputImage, setTryOnInputImage] = useState<string | null>(null);
   const [tryOnResult, setTryOnResult] = useState<string | null>(null);
@@ -122,41 +121,73 @@ const Checkout: React.FC = () => {
     }
   };
 
-  // Helper function to add/remove from wishlist
-  const toggleWishlist = () => {
-    if (!mainProduct) return;
+  // Helper function to check if a product is bargained
+  const isProductBargained = (productId: string): boolean => {
+    try {
+      const bargainedProducts = localStorage.getItem(BARGAINED_PRODUCTS_KEY);
+      if (bargainedProducts) {
+        const productIds: string[] = JSON.parse(bargainedProducts);
+        return productIds.includes(productId);
+      }
+    } catch (error) {
+      console.error('Error checking bargained products:', error);
+    }
+    return false;
+  };
 
+  // Helper function to check if a product is in wishlist
+  const isProductInWishlist = (productId: string): boolean => {
+    try {
+      const wishlist = localStorage.getItem(WISHLIST_KEY);
+      if (wishlist) {
+        const wishlistItems: WishlistItem[] = JSON.parse(wishlist);
+        return wishlistItems.some((item: WishlistItem) => item._id === productId);
+      }
+    } catch (error) {
+      console.error('Error checking wishlist:', error);
+    }
+    return false;
+  };
+
+  // Helper function to toggle wishlist for any product
+  const toggleWishlistForProduct = (product: CartItem) => {
     try {
       const wishlist = localStorage.getItem(WISHLIST_KEY);
       let wishlistItems: WishlistItem[] = wishlist ? JSON.parse(wishlist) : [];
+      const isInWishlist = isProductInWishlist(product._id);
 
       if (isInWishlist) {
         // Remove from wishlist
-        wishlistItems = wishlistItems.filter(item => item._id !== mainProduct._id);
+        wishlistItems = wishlistItems.filter(item => item._id !== product._id);
+        alert('✓ Removed from Wishlist');
       } else {
         // Add to wishlist
         wishlistItems.push({
-          _id: mainProduct._id,
-          name: mainProduct.name,
-          price: mainProduct.price,
-          images: mainProduct.images,
+          _id: product._id,
+          name: product.name,
+          price: product.price,
+          images: product.images,
           addedAt: new Date().toISOString()
         });
+        alert('✓ Added to Wishlist!');
       }
 
       localStorage.setItem(WISHLIST_KEY, JSON.stringify(wishlistItems));
-      setIsInWishlist(!isInWishlist);
-
-      // Show feedback
-      if (!isInWishlist) {
-        alert('✓ Added to Wishlist!');
-      } else {
-        alert('✓ Removed from Wishlist');
+      
+      // Update state for main product if it's the one being toggled
+      if (mainProduct && product._id === mainProduct._id) {
+        setIsInWishlist(!isInWishlist);
       }
     } catch (error) {
       console.error('Error updating wishlist:', error);
       alert('Error updating wishlist');
     }
+  };
+
+  // Helper function to add/remove from wishlist (for main product - kept for compatibility)
+  const toggleWishlist = () => {
+    if (!mainProduct) return;
+    toggleWishlistForProduct(mainProduct);
   };
 
   const handleVirtualTryOnClick = () => {
@@ -189,8 +220,14 @@ const Checkout: React.FC = () => {
     }, 1500);
   };
 
-  const handleSmartBargainingClick = () => {
-    if (!mainProduct) return;
+  // Store the current product being bargained
+  const [currentBargainProduct, setCurrentBargainProduct] = useState<CartItem | null>(null);
+
+  const handleSmartBargainingClick = (product: CartItem) => {
+    if (!product) return;
+    
+    // Store the product being bargained
+    setCurrentBargainProduct(product);
     setIsBargainOpen(true);
     setBargainAttempts(3);
     setOfferInput('');
@@ -210,7 +247,8 @@ const Checkout: React.FC = () => {
   };
 
   const handleSendOffer = async () => {
-    if (!mainProduct || isProcessingOffer) return;
+    const product = currentBargainProduct || mainProduct;
+    if (!product || isProcessingOffer) return;
     if (bargainAttempts <= 0) {
       alert('No bargaining attempts left. Please try again later.');
       return;
@@ -235,8 +273,8 @@ const Checkout: React.FC = () => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          productName: mainProduct.name,
-          originalPrice: mainProduct.price,
+          productName: product.name,
+          originalPrice: product.price,
           userOffer: offerValue,
           attemptNumber: 4 - bargainAttempts, // Convert remaining to attempt number
           conversationHistory: bargainMessages.map(msg => ({
@@ -255,12 +293,12 @@ const Checkout: React.FC = () => {
         // Update attempts
         if (data.accepted) {
           setBargainAttempts(0);
-          markProductAsBargained(mainProduct._id); // Lock bargaining and save to localStorage
+          markProductAsBargained(product._id); // Lock bargaining and save to localStorage
 
           // Update the product price in cart if deal accepted
-          if (data.finalPrice && data.finalPrice < mainProduct.price) {
+          if (data.finalPrice && data.finalPrice < product.price) {
             // Update the price in the cart
-            updatePrice(mainProduct._id, data.finalPrice);
+            updatePrice(product._id, data.finalPrice);
 
             // Show success message
             setTimeout(() => {
@@ -280,10 +318,10 @@ const Checkout: React.FC = () => {
       let maxDiscountPercent;
       let targetDiscountPercent;
 
-      if (mainProduct.price < 50) {
+      if (product.price < 50) {
         maxDiscountPercent = 0.05;
         targetDiscountPercent = 0.03;
-      } else if (mainProduct.price >= 50 && mainProduct.price <= 100) {
+      } else if (product.price >= 50 && product.price <= 100) {
         maxDiscountPercent = 0.10;
         targetDiscountPercent = 0.07;
       } else {
@@ -291,13 +329,13 @@ const Checkout: React.FC = () => {
         targetDiscountPercent = 0.12;
       }
 
-      const targetPrice = mainProduct.price * (1 - targetDiscountPercent);
-      const minPrice = mainProduct.price * (1 - maxDiscountPercent);
+      const targetPrice = product.price * (1 - targetDiscountPercent);
+      const minPrice = product.price * (1 - maxDiscountPercent);
       let aiResponse = '';
       let accepted = false;
-      let finalPrice = mainProduct.price;
+      let finalPrice = product.price;
 
-      if (offerValue >= mainProduct.price) {
+      if (offerValue >= product.price) {
         aiResponse = 'Great! Your offer matches the listing price. Deal accepted. 🎉';
         accepted = true;
         finalPrice = offerValue;
@@ -317,11 +355,11 @@ const Checkout: React.FC = () => {
       setBargainAttempts((prev) => (accepted ? 0 : Math.max(0, prev - 1)));
 
       // Update price in fallback mode too
-      if (accepted && finalPrice < mainProduct.price) {
-        markProductAsBargained(mainProduct._id); // Lock bargaining and save to localStorage
-        updatePrice(mainProduct._id, finalPrice);
+      if (accepted && finalPrice < product.price) {
+        markProductAsBargained(product._id); // Lock bargaining and save to localStorage
+        updatePrice(product._id, finalPrice);
         setTimeout(() => {
-          const discount = ((mainProduct.price - finalPrice) / mainProduct.price * 100).toFixed(1);
+          const discount = ((product.price - finalPrice) / product.price * 100).toFixed(1);
           alert(`🎉 Congratulations! Price updated to $${finalPrice.toFixed(2)} (${discount}% off)`);
         }, 500);
       }
@@ -367,208 +405,130 @@ const Checkout: React.FC = () => {
       </div>
 
       <div className="max-w-7xl mx-auto px-6 py-8">
-        {/* Main Product Section */}
-        {mainProduct && (
-          <div className="bg-white rounded-lg shadow-lg p-8 mb-8">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              {/* Left: Product Images */}
-              <div>
-                {/* Main Image */}
-                <div className="bg-gray-200 rounded-lg overflow-hidden mb-4 flex items-center justify-center h-96">
-                  {mainProduct.images && mainProduct.images.length > 0 ? (
-                    <img
-                      src={typeof mainProduct.images[selectedImageIndex] === 'string'
-                        ? mainProduct.images[selectedImageIndex]
-                        : (mainProduct.images[selectedImageIndex] as { url?: string })?.url || ''}
-                      alt={mainProduct.name}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="text-gray-400 text-xl">No image</div>
-                  )}
-                </div>
-
-                {/* Thumbnail Images */}
-                {mainProduct.images && mainProduct.images.length > 1 && (
-                  <div className="flex gap-2 overflow-x-auto">
-                    {mainProduct.images.map((img, idx) => (
-                      <button
-                        key={idx}
-                        onClick={() => setSelectedImageIndex(idx)}
-                        className={`w-20 h-20 rounded overflow-hidden border-2 flex-shrink-0 ${selectedImageIndex === idx ? 'border-teal-600' : 'border-gray-300'
-                          }`}
-                      >
+        {/* All Cart Items - Equal Size Display */}
+        <div className="bg-white rounded-lg shadow-lg p-6 mb-8">
+          <h2 className="text-2xl font-bold text-gray-900 mb-6">Your Cart ({cartItems.length} {cartItems.length === 1 ? 'item' : 'items'})</h2>
+          
+          <div className="space-y-4">
+            {cartItems.map((item) => (
+              <React.Fragment key={item._id}>
+                <div className="border border-gray-200 rounded-lg p-5 hover:shadow-md transition-shadow bg-white">
+                  <div className="flex gap-5 items-center">
+                    {/* Product Image - Equal Size for All */}
+                    <div className="flex-shrink-0">
+                      {item.images && item.images.length > 0 ? (
                         <img
-                          src={typeof img === 'string' ? img : (img as { url?: string })?.url || ''}
-                          alt={`thumb-${idx}`}
-                          className="w-full h-full object-cover"
+                          src={typeof item.images[0] === 'string' ? item.images[0] : (item.images[0] as { url?: string })?.url || ''}
+                          alt={item.name}
+                          className="w-32 h-32 object-cover rounded-lg border border-gray-200"
                         />
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Right: Product Details */}
-              <div className="flex flex-col justify-between">
-                {/* Top Section */}
-                <div>
-                  {/* In Stock Badge */}
-                  <div className="inline-block bg-teal-100 text-teal-700 px-3 py-1 rounded-full text-xs font-bold mb-3">
-                    ✓ In Stock
-                  </div>
-
-                  {/* Product Name & Rating */}
-                  <h1 className="text-3xl font-bold text-gray-900 mb-3">{mainProduct.name}</h1>
-
-                  <div className="flex items-center gap-2 mb-4">
-                    <div className="flex text-yellow-400 text-lg">
-                      {[...Array(5)].map((_, i) => (
-                        <span key={i}>★</span>
-                      ))}
+                      ) : (
+                        <div className="w-32 h-32 bg-gray-200 rounded-lg border border-gray-200 flex items-center justify-center">
+                          <span className="text-gray-400 text-sm">No image</span>
+                        </div>
+                      )}
                     </div>
-                    <span className="text-sm text-gray-600">(128 reviews)</span>
-                  </div>
 
-                  {/* Price Section */}
-                  <div className="mb-6">
-                    <div className="flex items-center gap-4 mb-1">
-                      <span className="text-4xl font-bold text-teal-600">${mainProduct.price.toFixed(2)}</span>
-                    </div>
-                    <p className="text-gray-600 text-sm">Inclusive of all taxes</p>
-                  </div>
+                    {/* Product Details */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex-1">
+                          <h3 className="font-semibold text-gray-900 text-lg mb-1">{item.name}</h3>
+                          <div className="flex items-center gap-3 mb-2">
+                            <span className="text-teal-600 font-bold text-xl">${item.price.toFixed(2)}</span>
+                            <span className="text-sm text-gray-500">each</span>
+                          </div>
+                        </div>
+                        
+                        {/* Remove Button - Top Right */}
+                        <button
+                          onClick={() => removeFromCart(item._id)}
+                          className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors flex-shrink-0"
+                          title="Remove from cart"
+                        >
+                          <FaTrash className="text-lg" />
+                        </button>
+                      </div>
 
-                  {/* Features */}
-                  <div className="space-y-2 mb-6 text-sm text-gray-700">
-                    <p>✓ Premium quality with best price guaranteed</p>
-                    <p>✓ Free returns & easy exchange</p>
-                    <p>✓ Same day delivery available</p>
-                  </div>
+                      {/* Quantity Controls and Total */}
+                      <div className="flex items-center gap-4">
+                        <span className="text-sm font-medium text-gray-700">Quantity:</span>
+                        <div className="flex items-center border border-gray-300 rounded-lg bg-white">
+                          <button
+                            onClick={() => updateQuantity(item._id, Math.max(1, item.quantity - 1))}
+                            className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-l-lg transition-colors"
+                            aria-label="Decrease quantity"
+                          >
+                            −
+                          </button>
+                          <span className="px-5 py-2 font-medium border-l border-r border-gray-300 min-w-[3.5rem] text-center">
+                            {item.quantity}
+                          </span>
+                          <button
+                            onClick={() => updateQuantity(item._id, item.quantity + 1)}
+                            className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-r-lg transition-colors"
+                            aria-label="Increase quantity"
+                          >
+                            +
+                          </button>
+                        </div>
+                        <div className="ml-auto">
+                          <span className="text-sm text-gray-600">Subtotal: </span>
+                          <span className="font-bold text-teal-600 text-lg">${(item.price * item.quantity).toFixed(2)}</span>
+                        </div>
+                      </div>
 
-                  {/* Quantity Selector */}
-                  <div className="flex items-center gap-4 mb-6">
-                    <span className="text-sm font-medium text-gray-700">Quantity:</span>
-                    <div className="flex items-center border border-gray-300 rounded-lg bg-gray-50">
-                      <button
-                        onClick={() => updateQuantity(mainProduct._id, Math.max(1, mainProduct.quantity - 1))}
-                        className="px-3 py-2 text-gray-600 hover:bg-gray-200"
-                      >
-                        −
-                      </button>
-                      <span className="px-4 py-2 font-medium border-l border-r border-gray-300">
-                        {mainProduct.quantity}
-                      </span>
-                      <button
-                        onClick={() => updateQuantity(mainProduct._id, mainProduct.quantity + 1)}
-                        className="px-3 py-2 text-gray-600 hover:bg-gray-200"
-                      >
-                        +
-                      </button>
+                      {/* Bargained and Wishlist Buttons for Each Item */}
+                      <div className="mt-4 pt-4 border-t border-gray-200">
+                        <div className="flex gap-3">
+                          <button
+                            onClick={() => handleSmartBargainingClick(item)}
+                            disabled={isProductBargained(item._id)}
+                            className={`px-4 py-2 border text-sm font-medium rounded-lg transition-colors flex items-center gap-2 ${isProductBargained(item._id)
+                              ? 'border-gray-300 text-gray-400 bg-gray-100 cursor-not-allowed'
+                              : 'border-teal-600 text-teal-600 hover:bg-teal-50'
+                              }`}
+                          >
+                            {isProductBargained(item._id) ? '✓ Bargained' : 'Smart Bargaining'}
+                          </button>
+                          <button
+                            onClick={() => toggleWishlistForProduct(item)}
+                            className={`px-4 py-2 border text-sm font-medium rounded-lg transition-colors flex items-center gap-2 ${isProductInWishlist(item._id)
+                              ? 'border-red-300 bg-red-50 text-red-600'
+                              : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+                              }`}
+                          >
+                            <FaHeart style={{ fill: isProductInWishlist(item._id) ? 'currentColor' : 'none' }} /> 
+                            {isProductInWishlist(item._id) ? 'Saved' : 'Wishlist'}
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
-
-                {/* Action Buttons */}
-                <div className="space-y-3">
-                  {/* Buy Now Button */}
-                  <button
-                    onClick={() => {
-                      // Check authentication before navigating
-                      const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
-                      if (!isLoggedIn) {
-                        // Save current path for redirect after login
-                        localStorage.setItem('redirectAfterLogin', '/buy-now');
-                        alert('Please login or create an account to place an order.');
-                        navigate('/login');
-                      } else {
-                        navigate('/buy-now');
-                      }
-                    }}
-                    className="w-full bg-teal-600 text-white font-bold py-4 rounded-lg hover:bg-teal-700 transition-colors text-lg"
-                  >
-                    Buy Now
-                  </button>
-
-                  {/* Features Row */}
-                  <div className="grid grid-cols-3 gap-2">
-                    <button
-                      onClick={handleVirtualTryOnClick}
-                      className="px-3 py-2 border border-teal-600 text-teal-600 text-xs font-medium rounded-lg hover:bg-teal-50 transition-colors flex items-center justify-center gap-1"
-                    >
-                      <span></span> Virtual Try-On
-                    </button>
-                    <button
-                      onClick={handleSmartBargainingClick}
-                      disabled={isBargainCompleted}
-                      className={`px-3 py-2 border text-xs font-medium rounded-lg transition-colors flex items-center justify-center gap-1 ${isBargainCompleted
-                        ? 'border-gray-300 text-gray-400 bg-gray-100 cursor-not-allowed'
-                        : 'border-teal-600 text-teal-600 hover:bg-teal-50'
-                        }`}
-                      title={isBargainCompleted ? 'Bargaining completed for this product' : 'Negotiate the price with AI'}
-                    >
-                      <span></span> {isBargainCompleted ? '✓ Bargained' : 'Smart Bargaining'}
-                    </button>
-                    <button
-                      onClick={toggleWishlist}
-                      className={`px-3 py-2 border text-xs font-medium rounded-lg transition-colors flex items-center justify-center gap-1 ${isInWishlist
-                        ? 'border-red-300 bg-red-50 text-red-600'
-                        : 'border-gray-300 text-gray-600 hover:bg-gray-50'
-                        }`}
-                      title={isInWishlist ? 'Remove from Wishlist' : 'Add to Wishlist'}
-                    >
-                      <FaHeart style={{ fill: isInWishlist ? 'currentColor' : 'none' }} /> {isInWishlist ? 'Saved' : 'Wishlist'}
-                    </button>
-                  </div>
-
-                  {/* Remove Button */}
-                  <button
-                    onClick={() => removeFromCart(mainProduct._id)}
-                    className="w-full px-4 py-2 border border-red-300 text-red-600 font-medium rounded-lg hover:bg-red-50 transition-colors flex items-center justify-center gap-2"
-                  >
-                    <FaTrash /> Remove from cart
-                  </button>
-                </div>
-              </div>
-            </div>
+              </React.Fragment>
+            ))}
           </div>
-        )}
-
-        {/* Other Items in Cart */}
-        {cartItems.length > 1 && (
-          <div className="bg-white rounded-lg shadow p-6 mb-8">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">Other Items in Cart ({cartItems.length - 1})</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {cartItems.slice(1).map((item) => (
-                <div key={item._id} className="border border-gray-200 rounded-lg p-4 hover:shadow-lg transition-shadow">
-                  <div className="flex gap-3 mb-3">
-                    {item.images && item.images.length > 0 ? (
-                      <img
-                        src={typeof item.images[0] === 'string' ? item.images[0] : (item.images[0] as { url?: string })?.url || ''}
-                        alt={item.name}
-                        className="w-16 h-16 object-cover rounded"
-                      />
-                    ) : (
-                      <div className="w-16 h-16 bg-gray-200 rounded" />
-                    )}
-                    <div className="flex-1">
-                      <h4 className="font-semibold text-gray-900 text-sm line-clamp-2">{item.name}</h4>
-                      <p className="text-teal-600 font-bold text-sm">$ {item.price.toFixed(2)}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-600">Qty: {item.quantity}</span>
-                    <button
-                      onClick={() => removeFromCart(item._id)}
-                      className="text-red-500 hover:text-red-700 text-sm"
-                    >
-                      <FaTrash />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
+          
+          {/* Single Buy Now Button - Below Entire Cart */}
+          <div className="mt-6">
+            <button
+              onClick={() => {
+                const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
+                if (!isLoggedIn) {
+                  localStorage.setItem('redirectAfterLogin', '/buy-now');
+                  alert('Please login or create an account to place an order.');
+                  navigate('/login');
+                } else {
+                  navigate('/buy-now');
+                }
+              }}
+              className="w-full bg-teal-600 text-white font-bold py-4 rounded-lg hover:bg-teal-700 transition-colors text-lg"
+            >
+              Buy Now
+            </button>
           </div>
-        )}
+        </div>
 
         {/* Personalized Recommendations (Same as Home Page) */}
         <Recommendations />
@@ -673,7 +633,7 @@ const Checkout: React.FC = () => {
           </div>
         </div>
       )}
-      {isBargainOpen && mainProduct && (
+      {isBargainOpen && currentBargainProduct && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 py-10">
           <div className="w-full max-w-4xl bg-white rounded-3xl shadow-2xl overflow-hidden">
             <div className="flex items-center justify-between px-8 py-6 border-b bg-gradient-to-r from-white to-emerald-50">
@@ -694,12 +654,12 @@ const Checkout: React.FC = () => {
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 bg-white border border-gray-100 rounded-2xl p-6 shadow-sm">
                 <div className="flex items-center gap-4">
                   <div className="w-20 h-20 rounded-2xl overflow-hidden bg-gray-100">
-                    {mainProduct.images && mainProduct.images.length > 0 ? (
+                    {currentBargainProduct.images && currentBargainProduct.images.length > 0 ? (
                       <img
-                        src={typeof mainProduct.images[0] === 'string'
-                          ? mainProduct.images[0]
-                          : (mainProduct.images[0] as { url?: string })?.url || ''}
-                        alt={mainProduct.name}
+                        src={typeof currentBargainProduct.images[0] === 'string'
+                          ? currentBargainProduct.images[0]
+                          : (currentBargainProduct.images[0] as { url?: string })?.url || ''}
+                        alt={currentBargainProduct.name}
                         className="w-full h-full object-cover"
                       />
                     ) : (
@@ -707,10 +667,10 @@ const Checkout: React.FC = () => {
                     )}
                   </div>
                   <div>
-                    <p className="text-xs uppercase tracking-wide text-gray-400 mb-1">Product ID: {mainProduct._id}</p>
-                    <h4 className="text-xl font-semibold text-gray-900">{mainProduct.name}</h4>
+                    <p className="text-xs uppercase tracking-wide text-gray-400 mb-1">Product ID: {currentBargainProduct._id}</p>
+                    <h4 className="text-xl font-semibold text-gray-900">{currentBargainProduct.name}</h4>
                     <p className="text-sm text-gray-500">Original Price</p>
-                    <p className="text-2xl font-bold text-teal-600">$ {mainProduct.price.toFixed(0)}</p>
+                    <p className="text-2xl font-bold text-teal-600">$ {currentBargainProduct.price.toFixed(0)}</p>
                   </div>
                 </div>
 
