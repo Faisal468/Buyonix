@@ -35,6 +35,8 @@ const BuyNow: React.FC = () => {
   // Stripe state
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [stripePromise] = useState(() => getStripe());
+  const [isPaymentConfirmed, setIsPaymentConfirmed] = useState(false);
+  const [isPlacingOrder, setIsPlacingOrder] = useState(false);
 
   // Check authentication on component mount
   useEffect(() => {
@@ -112,7 +114,6 @@ const BuyNow: React.FC = () => {
   }
 
   const { cartItems } = cartContext;
-  const mainProduct = cartItems[0];
 
   if (cartItems.length === 0) {
     return (
@@ -146,8 +147,10 @@ const BuyNow: React.FC = () => {
     }));
   };
 
-  const handlePlaceOrder = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handlePlaceOrder = async (e?: React.FormEvent) => {
+    if (e) {
+      e.preventDefault();
+    }
 
     const localLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
     if (!localLoggedIn) {
@@ -158,10 +161,20 @@ const BuyNow: React.FC = () => {
       return;
     }
 
-    if (!formData.firstName || !formData.lastName || !formData.email || !formData.phoneNumber || !formData.address || !formData.city || !formData.postalCode) {
-      alert('Please fill in all shipping information fields');
+    // Skip form validation if payment is already confirmed (Stripe payment)
+    if (!isPaymentConfirmed) {
+      if (!formData.firstName || !formData.lastName || !formData.email || !formData.phoneNumber || !formData.address || !formData.city || !formData.postalCode) {
+        alert('Please fill in all shipping information fields');
+        return;
+      }
+    }
+
+    // Prevent duplicate order placement
+    if (isPlacingOrder) {
       return;
     }
+
+    setIsPlacingOrder(true);
 
     try {
       const orderData = {
@@ -213,7 +226,20 @@ const BuyNow: React.FC = () => {
     } catch (error) {
       console.error('Error placing order:', error);
       alert('Failed to place order. Please try again.');
+      setIsPlacingOrder(false);
     }
+  };
+
+  // Handle Stripe payment success - automatically place order
+  const handleStripePaymentSuccess = async () => {
+    console.log('✅ Payment confirmed!');
+    setIsPaymentConfirmed(true);
+    
+    // Wait a moment to show payment confirmed message
+    setTimeout(async () => {
+      // Automatically place the order
+      await handlePlaceOrder();
+    }, 1000);
   };
 
   const subtotal = cartItems.reduce((sum: number, item) => sum + (item.price * item.quantity), 0);
@@ -334,8 +360,8 @@ const BuyNow: React.FC = () => {
 
               <div className="flex gap-4 mb-6">
                 {[
-                  { id: 'mobile', label: 'Mobile Wallet', icon: '📱' },
-                  { id: 'bank', label: 'Bank', icon: '🏦' },
+                  // { id: 'mobile', label: 'Mobile Wallet', icon: '📱' },
+                  // { id: 'bank', label: 'Bank', icon: '🏦' },
                   { id: 'card', label: 'Card', icon: '💳' },
                   { id: 'cod', label: 'COD', icon: '📦' },
                 ].map((method) => (
@@ -414,19 +440,47 @@ const BuyNow: React.FC = () => {
 
               {formData.paymentMethod === 'card' && clientSecret && (
                 <div className="border-t border-gray-200 pt-6">
-                  <h3 className="font-bold text-gray-900 text-lg mb-4">💳 Card Payment (Stripe)</h3>
-                  <Elements stripe={stripePromise} options={{ clientSecret, appearance: stripeAppearance }}>
-                    <RealStripePayment
-                      amount={total}
-                      onSuccess={() => {
-                        console.log('✅ Payment successful!');
-                        handlePlaceOrder(new Event('submit') as any);
-                      }}
-                      onError={(error: string) => {
-                        console.error('❌ Payment failed:', error);
-                      }}
-                    />
-                  </Elements>
+                  <h3 className="font-bold text-gray-900 text-lg mb-4"> Card Payment </h3>
+                  
+                  {/* Payment Confirmed Message */}
+                  {isPaymentConfirmed && (
+                    <div className="mb-4 bg-green-50 border-2 border-green-500 rounded-lg p-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center">
+                          <span className="text-white text-xl">✓</span>
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-green-900 text-lg">Payment Confirmed!</h4>
+                          <p className="text-sm text-green-700">
+                            {isPlacingOrder ? 'Placing your order...' : 'Your payment has been processed successfully.'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {!isPaymentConfirmed && (
+                    <Elements stripe={stripePromise} options={{ clientSecret, appearance: stripeAppearance }}>
+                      <RealStripePayment
+                        amount={total}
+                        onSuccess={handleStripePaymentSuccess}
+                        onError={(error: string) => {
+                          console.error('❌ Payment failed:', error);
+                          alert(`Payment failed: ${error}`);
+                        }}
+                      />
+                    </Elements>
+                  )}
+
+                  {/* Loading state while placing order */}
+                  {isPaymentConfirmed && isPlacingOrder && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                      <div className="flex items-center gap-3">
+                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                        <p className="text-blue-800 font-medium">Placing your order, please wait...</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -489,12 +543,35 @@ const BuyNow: React.FC = () => {
                 <p className="font-medium">By placing your order, you agree to our terms and conditions</p>
               </div>
 
-              <button
-                onClick={handlePlaceOrder}
-                className="w-full bg-teal-600 text-white font-bold py-3 rounded-lg hover:bg-teal-700 transition-colors"
-              >
-                Place Order
-              </button>
+              {/* Hide Place Order button for Stripe payments after payment is confirmed */}
+              {!(formData.paymentMethod === 'card' && isPaymentConfirmed) && (
+                <button
+                  onClick={handlePlaceOrder}
+                  disabled={isPlacingOrder}
+                  className={`w-full bg-teal-600 text-white font-bold py-3 rounded-lg transition-colors ${
+                    isPlacingOrder 
+                      ? 'opacity-50 cursor-not-allowed' 
+                      : 'hover:bg-teal-700'
+                  }`}
+                >
+                  {isPlacingOrder ? 'Placing Order...' : 'Place Order'}
+                </button>
+              )}
+
+              {/* Show message for Stripe payments after confirmation */}
+              {formData.paymentMethod === 'card' && isPaymentConfirmed && (
+                <div className="w-full bg-green-50 border-2 border-green-500 rounded-lg p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
+                      <span className="text-white text-lg">✓</span>
+                    </div>
+                    <div>
+                      <p className="font-bold text-green-900">Order is being placed automatically...</p>
+                      <p className="text-sm text-green-700">Please wait while we process your order.</p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
