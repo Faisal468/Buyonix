@@ -55,6 +55,7 @@ app.use("/product", require("./routes/product"));
 app.use("/order", require("./routes/order"));
 app.use("/payment", require("./routes/payment"));
 app.use("/bargain", require("./routes/bargain"));
+app.use("/chatbot", require("./routes/chatbot"));
 
 const port = process.env.PORT || 5000;
 
