@@ -1,0 +1,13 @@
+# Ignore dependency folders
+node_modules/
+Frontend/node_modules/
+Backend/node_modules/
+
+# Ignore environment variables
+.env
+.env.test
+.env.local
+
+# Ignore large binary files and logs
+*.exe
+*.log
