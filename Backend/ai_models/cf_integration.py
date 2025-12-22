@@ -166,59 +166,48 @@ class CFIntegration:
             sys.stderr = SuppressPrint()
             
             try:
+                # Always prefer REAL interactions. If not enough data, we DO NOT
+                # train a synthetic model (to avoid fake product IDs like "product_1").
+                real_interactions_df, interaction_count = self.get_real_interactions()
+
+                if interaction_count < 10:
+                    # Not enough real data → don't initialize model, let caller fall back.
+                    # This prevents training on synthetic IDs that don't match MongoDB.
+                    self.is_initialized = False
+                    return False
+
+                # Either first-time training or retraining because counts changed
                 if os.path.exists(self.model_path):
-                    # Check if model needs retraining due to product or user count change
-                    self.model.load_model(self.model_path)
-                    current_product_count = len(self.model.product_ids) if self.model.product_ids else 45
-                    current_user_count = len(self.model.user_ids) if self.model.user_ids else 5
-                    
-                    # If product or user count changed, retrain
+                    try:
+                        self.model.load_model(self.model_path)
+                        current_product_count = len(self.model.product_ids) if self.model.product_ids else 0
+                        current_user_count = len(self.model.user_ids) if self.model.user_ids else 0
+                    except Exception:
+                        # If load fails, force retrain
+                        current_product_count = 0
+                        current_user_count = 0
+
+                    # If product or user count changed, or model was empty, retrain
                     if n_products != current_product_count or n_users != current_user_count:
                         os.remove(self.model_path)
-                        
-                        # Try to use real interactions first, fall back to synthetic
-                        real_interactions_df, interaction_count = self.get_real_interactions()
-                        
-                        if interaction_count >= 10:  # Need at least 10 real interactions
-                            # Use real interactions DataFrame
-                            print(f"\n🤖 Training CF model with {interaction_count} REAL interactions...")
-                            print("   Step 1: Interaction → Numeric Rating ✓")
-                            print("   Step 2: Building User × Product Matrix...")
-                            self.model.build_user_item_matrix(real_interactions_df)
-                            print("   Step 3: Applying Matrix Factorization (SVD)...")
-                            self.model.train(real_interactions_df)
-                            print("   ✓ Model trained with REAL user behavior data!")
-                        else:
-                            # Fall back to synthetic data
-                            print(f"\n⚠️  Only {interaction_count} real interactions found (need ≥10)")
-                            print("   Using synthetic data for initial training...")
-                            interactions = self.model.generate_synthetic_data(n_users=n_users, n_products=n_products)
-                            self.model.build_user_item_matrix(interactions)
-                            self.model.train(interactions)
-                        
-                        self.model.save_model(self.model_path)
-                else:
-                    # Generate and train on synthetic data with product and user counts
-                    # Or use real interactions if available
-                    real_interactions_df, interaction_count = self.get_real_interactions()
-                    
-                    if interaction_count >= 10:  # Need at least 10 real interactions
-                        # Use real interactions DataFrame
-                        print(f"\n🤖 Training CF model with {interaction_count} REAL interactions...")
+
+                        print(f"\n🤖 Training CF model with {interaction_count} REAL interactions (retrain)...")
                         print("   Step 1: Interaction → Numeric Rating ✓")
                         print("   Step 2: Building User × Product Matrix...")
                         self.model.build_user_item_matrix(real_interactions_df)
                         print("   Step 3: Applying Matrix Factorization (SVD)...")
                         self.model.train(real_interactions_df)
-                        print("   ✓ Model trained with REAL user behavior data!")
-                    else:
-                        # Fall back to synthetic data
-                        print(f"\n⚠️  Only {interaction_count} real interactions found (need ≥10)")
-                        print("   Using synthetic data for initial training...")
-                        interactions = self.model.generate_synthetic_data(n_users=n_users, n_products=n_products)
-                        self.model.build_user_item_matrix(interactions)
-                        self.model.train(interactions)
-                    
+                        print("   ✓ Model retrained with REAL user behavior data!")
+                        self.model.save_model(self.model_path)
+                else:
+                    # First-time training with REAL interactions only
+                    print(f"\n🤖 Training CF model with {interaction_count} REAL interactions...")
+                    print("   Step 1: Interaction → Numeric Rating ✓")
+                    print("   Step 2: Building User × Product Matrix...")
+                    self.model.build_user_item_matrix(real_interactions_df)
+                    print("   Step 3: Applying Matrix Factorization (SVD)...")
+                    self.model.train(real_interactions_df)
+                    print("   ✓ Model trained with REAL user behavior data!")
                     self.model.save_model(self.model_path)
             finally:
                 sys.stdout = old_stdout
@@ -331,17 +320,20 @@ if __name__ == "__main__":
     try:
         init_success = cf.initialize(n_products=n_products, n_users=n_users)
     except Exception as init_error:
+        # Return a JSON error but exit with code 0 so Node can handle gracefully
         sys.stdout = old_stdout
         sys.stderr = old_stderr
-        print(json.dumps({"error": f"Initialization error: {str(init_error)}"}))
-        sys.exit(1)
+        print(json.dumps({"success": False, "error": f"Initialization error: {str(init_error)}"}))
+        sys.exit(0)
     finally:
         sys.stdout = old_stdout
         sys.stderr = old_stderr
     
     if not init_success:
-        print(json.dumps({"error": "Failed to initialize model"}))
-        sys.exit(1)
+        # Not enough interactions or other non-fatal issue.
+        # Return JSON describing the problem, but do NOT exit with error code.
+        print(json.dumps({"success": False, "error": "Failed to initialize model (likely not enough interactions yet)"}))
+        sys.exit(0)
     
     # Get command from arguments
     if len(sys.argv) < 2:
