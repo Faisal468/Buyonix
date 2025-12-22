@@ -3,14 +3,43 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 export interface ChatMessage {
   message: string;
   userId?: string;
+  sessionId?: string;
 }
 
 export interface ChatResponse {
   success: boolean;
   response: string;
-  type: 'product_help' | 'redirect';
+  type: 'product_help' | 'redirect' | 'error';
   productsFound?: number;
   error?: string;
+  chatId?: string;
+}
+
+export interface ChatHistoryItem {
+  id: string;
+  title: string;
+  lastActivity: string;
+  totalMessages: number;
+  productQueriesCount: number;
+  createdAt: string;
+}
+
+export interface ChatConversation {
+  id: string;
+  title: string;
+  messages: Array<{
+    _id: string;
+    text: string;
+    sender: 'user' | 'bot';
+    timestamp: string;
+    responseType: string;
+    productsFound: number;
+  }>;
+  lastActivity: string;
+  totalMessages: number;
+  productQueriesCount: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface ProductSearchResult {
@@ -38,7 +67,7 @@ class ChatbotService {
   /**
    * Send a message to the chatbot and get AI-powered response
    */
-  static async sendMessage(message: string, userId?: string): Promise<ChatResponse> {
+  static async sendMessage(message: string, userId?: string, sessionId?: string): Promise<ChatResponse> {
     try {
       const response = await fetch(`${API_BASE_URL}/chatbot/chat`, {
         method: 'POST',
@@ -48,7 +77,8 @@ class ChatbotService {
         credentials: 'include',
         body: JSON.stringify({
           message,
-          userId
+          userId,
+          sessionId
         }),
       });
 
@@ -170,6 +200,159 @@ class ChatbotService {
       return undefined;
     } catch (error) {
       return undefined;
+    }
+  }
+
+  /**
+   * Generate or get session ID for anonymous users
+   */
+  static getSessionId(): string {
+    const storageKey = 'buyonix_chat_session';
+    let sessionId = localStorage.getItem(storageKey);
+    
+    if (!sessionId) {
+      sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      localStorage.setItem(storageKey, sessionId);
+    }
+    
+    return sessionId;
+  }
+
+  /**
+   * Get chat history for current user
+   */
+  static async getChatHistory(userId?: string, limit: number = 10, page: number = 1): Promise<{
+    success: boolean;
+    chats: ChatHistoryItem[];
+    pagination?: any;
+    error?: string;
+  }> {
+    try {
+      const userIdentifier = userId || this.getSessionId();
+      const response = await fetch(
+        `${API_BASE_URL}/chatbot/history/${encodeURIComponent(userIdentifier)}?limit=${limit}&page=${page}`,
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include',
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error('Chat history error:', error);
+      return {
+        success: false,
+        chats: [],
+        error: error instanceof Error ? error.message : 'Failed to load chat history'
+      };
+    }
+  }
+
+  /**
+   * Get specific chat conversation
+   */
+  static async getChatConversation(chatId: string): Promise<{
+    success: boolean;
+    chat?: ChatConversation;
+    error?: string;
+  }> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/chatbot/conversation/${chatId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error('Chat conversation error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to load conversation'
+      };
+    }
+  }
+
+  /**
+   * Delete a chat conversation
+   */
+  static async deleteChatConversation(chatId: string): Promise<{
+    success: boolean;
+    message?: string;
+    error?: string;
+  }> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/chatbot/conversation/${chatId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error('Delete conversation error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to delete conversation'
+      };
+    }
+  }
+
+  /**
+   * Clear all chat history for current user
+   */
+  static async clearChatHistory(userId?: string): Promise<{
+    success: boolean;
+    message?: string;
+    error?: string;
+  }> {
+    try {
+      const userIdentifier = userId || this.getSessionId();
+      const response = await fetch(
+        `${API_BASE_URL}/chatbot/history/${encodeURIComponent(userIdentifier)}`,
+        {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include',
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error('Clear history error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to clear chat history'
+      };
     }
   }
 }

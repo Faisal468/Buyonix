@@ -29,6 +29,8 @@ const Chatbot = ({
     [key: string]: "yes" | "no" | null;
   }>({});
   const [isTyping, setIsTyping] = useState(false);
+  const [sessionId] = useState(ChatbotService.getSessionId());
+  const [currentChatId, setCurrentChatId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom when new messages arrive
@@ -36,11 +38,68 @@ const Chatbot = ({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // Load chat history when chatbot opens
+  useEffect(() => {
+    if (isOpen && sessionId) {
+      loadRecentChatHistory();
+    }
+  }, [isOpen, sessionId]);
+
+  // Load recent chat history
+  const loadRecentChatHistory = async () => {
+    try {
+      const userId = await ChatbotService.getUserId();
+      const historyResponse = await ChatbotService.getChatHistory(userId, 1, 1);
+      
+      if (historyResponse.success && historyResponse.chats.length > 0) {
+        const latestChat = historyResponse.chats[0];
+        const conversationResponse = await ChatbotService.getChatConversation(latestChat.id);
+        
+        if (conversationResponse.success && conversationResponse.chat) {
+          const chatMessages = conversationResponse.chat.messages.map(msg => ({
+            id: msg._id,
+            text: msg.text,
+            sender: msg.sender,
+            timestamp: new Date(msg.timestamp)
+          }));
+          
+          // Only load if there are actual conversation messages (more than just the welcome message)
+          if (chatMessages.length > 1) {
+            setMessages(chatMessages);
+            setCurrentChatId(conversationResponse.chat.id);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error loading chat history:', error);
+      // Continue with default welcome message on error
+    }
+  };
+
+  // Clear current chat
+  const clearChat = () => {
+    setMessages([
+      {
+        id: "1",
+        text: "Hi! I'm your shopping assistant. I can help you find products, check prices, and answer questions about our store. What are you looking for today?",
+        sender: "bot",
+        timestamp: new Date(),
+      },
+    ]);
+    setCurrentChatId(null);
+    setHelpfulResponse({});
+  };
+
   // Handle bot responses using AI service
   const getBotResponse = async (userMessage: string): Promise<string> => {
     try {
       const userId = await ChatbotService.getUserId();
-      const response = await ChatbotService.sendMessage(userMessage, userId);
+      const response = await ChatbotService.sendMessage(userMessage, userId, sessionId);
+
+      // Update current chat ID if received
+      if (response.chatId) {
+        setCurrentChatId(response.chatId);
+      }
 
       if (response.success) {
         return response.response;
@@ -153,11 +212,30 @@ const Chatbot = ({
               />
             </svg>
           </div>
-          <span className="font-semibold">Chatling Bot</span>
+          <div>
+            <span className="font-semibold text-sm">Shopping Assistant</span>
+            <p className="text-xs text-blue-200">
+              {currentChatId ? 'Conversation saved' : 'New conversation'}
+            </p>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <button className="text-white hover:text-gray-200">
-            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+        <div className="flex items-center gap-1">
+          <button
+            onClick={clearChat}
+            className="text-white hover:text-gray-200 transition-colors p-1"
+            title="Start new conversation"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 4v16m8-8H4"
+              />
+            </svg>
+          </button>
+          <button className="text-white hover:text-gray-200 p-1" title="Options">
+            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
               <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
             </svg>
           </button>
