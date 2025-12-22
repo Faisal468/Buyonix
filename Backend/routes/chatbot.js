@@ -106,7 +106,24 @@ router.post("/chat", async (req, res) => {
 
     const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
     if (!GEMINI_API_KEY) {
-      throw new Error("GEMINI_API_KEY not configured");
+      console.error("GEMINI_API_KEY not configured in environment variables");
+      const fallbackResponse = "I'm currently experiencing technical difficulties. Please contact our support team for assistance. In the meantime, you can browse our products on the shop page!";
+      
+      // Save fallback response
+      if (chatSession) {
+        try {
+          await chatSession.addMessage(fallbackResponse, 'bot', 'error', 0);
+        } catch (saveError) {
+          console.error("Error saving fallback message:", saveError);
+        }
+      }
+      
+      return res.json({
+        success: true,
+        response: fallbackResponse,
+        type: "error",
+        chatId: chatSession?._id
+      });
     }
 
     // Fetch relevant products for context (limited to reduce tokens)
@@ -217,6 +234,8 @@ User: ${message}`;
       console.error('Gemini API Error:', error.response.status, error.response.data);
     } else if (error.request) {
       console.error('Network Error:', error.message);
+    } else {
+      console.error('Error:', error.message);
     }
     
     const errorMessage = "I can only help you with shopping and product questions. What would you like to know about our products?";
@@ -225,10 +244,11 @@ User: ${message}`;
     const { userId, sessionId } = req.body;
     const userIdentifier = userId || sessionId || `anon_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
+    let errorChatSession = null;
     try {
-      const chatSession = await Chat.findOrCreateSession(userIdentifier, sessionId);
-      if (chatSession) {
-        await chatSession.addMessage(errorMessage, 'bot', 'error', 0);
+      errorChatSession = await Chat.findOrCreateSession(userIdentifier, sessionId);
+      if (errorChatSession) {
+        await errorChatSession.addMessage(errorMessage, 'bot', 'error', 0);
       }
     } catch (chatError) {
       console.error("Error saving error message to chat:", chatError);
@@ -238,7 +258,7 @@ User: ${message}`;
       success: true,
       response: errorMessage,
       type: "error_redirect",
-      chatId: chatSession?._id
+      chatId: errorChatSession?._id || null
     });
   }
 });

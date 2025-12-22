@@ -69,7 +69,10 @@ class ChatbotService {
    */
   static async sendMessage(message: string, userId?: string, sessionId?: string): Promise<ChatResponse> {
     try {
-      const response = await fetch(`${API_BASE_URL}/chatbot/chat`, {
+      const url = `${API_BASE_URL}/chatbot/chat`;
+      console.log('Sending message to:', url);
+      
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -82,11 +85,16 @@ class ChatbotService {
         }),
       });
 
+      console.log('Chatbot response status:', response.status);
+
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Chatbot API error:', response.status, errorText);
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
       const data = await response.json();
+      console.log('Chatbot response data:', data);
       return data;
     } catch (error) {
       console.error('Chatbot service error:', error);
