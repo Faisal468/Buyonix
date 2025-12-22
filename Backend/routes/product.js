@@ -290,15 +290,14 @@ router.get("/recommendations/:userId", async (req, res) => {
             });
         }
 
-        // Get CF recommendations
+        // Get CF recommendations (based on user's purchase/cart history from MongoDB Atlas)
         const cfRecs = await cfRecommender.recommendForUser(userId, numRecommendations);
         
         // Fetch actual product details from database
-        // CF model returns product_id numbers, convert to MongoDB ObjectId pattern
         const recommendations = [];
         
         for (const rec of cfRecs) {
-            // Find product by ID
+            // Find product by ID (these are real MongoDB ObjectIds from interactions)
             const product = await Product.findById(rec.productId)
                 .populate('sellerId', 'storeName businessName');
             
@@ -306,16 +305,35 @@ router.get("/recommendations/:userId", async (req, res) => {
                 recommendations.push({
                     ...product.toObject(),
                     predictedRating: rec.predictedRating,
-                    reason: 'Personalized recommendation based on user behavior'
+                    reason: rec.reason || 'Based on products you bought and similar users'
                 });
             }
+        }
+
+        // If CF didn't return enough recommendations, fill with popular products
+        if (recommendations.length < numRecommendations) {
+            const existingIds = new Set(recommendations.map(r => r._id.toString()));
+            const popularProducts = await Product.find({ 
+                status: 'active',
+                _id: { $nin: Array.from(existingIds) }
+            })
+                .populate('sellerId', 'storeName businessName')
+                .sort({ rating: -1, createdAt: -1 })
+                .limit(numRecommendations - recommendations.length);
+            
+            popularProducts.forEach(product => {
+                recommendations.push({
+                    ...product.toObject(),
+                    reason: 'Popular products you might like'
+                });
+            });
         }
 
         res.json({
             success: true,
             count: recommendations.length,
             recommendations,
-            source: 'collaborative_filtering_ai'
+            source: recommendations.length > cfRecs.length ? 'collaborative_filtering_ai_with_fallback' : 'collaborative_filtering_ai'
         });
 
     } catch (error) {
@@ -507,17 +525,17 @@ router.get("/related/:userId", async (req, res) => {
  */
 router.post("/ai/retrain", async (req, res) => {
     try {
-        console.log('📊 Retrain request received');
+        console.log(' Retrain request received');
         const result = await cfRecommender.retrain();
         
         res.status(200).json({
             success: true,
-            message: "✓ Model retrained successfully",
+            message: " Model retrained successfully",
             timestamp: new Date().toISOString(),
             stats: result.stats
         });
     } catch (error) {
-        console.error('❌ Retrain failed:', error.message);
+        console.error(' Retrain failed:', error.message);
         res.status(500).json({
             success: false,
             message: "Failed to retrain model",

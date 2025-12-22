@@ -100,16 +100,85 @@ class CFIntegration:
                 except:
                     pass
             if not db_uri:
-                # Default fallback
-                # Look for DB_URI specifically since that is what is in your .env
-                  db_uri = os.getenv('DB_URI')
+                # No DB_URI found - this is a critical error
+                import sys
+                sys.stderr.write("   ✗ ERROR: DB_URI not found! Cannot connect to MongoDB.\n")
+                sys.stderr.write("   Make sure DB_URI is in .env file or passed as db_uri= argument\n")
+                import pandas as pd
+                return pd.DataFrame(columns=['user_id', 'product_id', 'rating']), 0
             
-            # Write error to stderr so it's not suppressed
+            # Write info to stderr so it's visible
             import sys
-            sys.stderr.write(f"\n📊 Connecting to MongoDB: {db_uri[:50]}...\n")
+            db_uri_display = db_uri[:50] + "..." if len(db_uri) > 50 else db_uri
+            sys.stderr.write(f"\n📊 Connecting to MongoDB: {db_uri_display}\n")
             
-            client = MongoClient(db_uri, serverSelectionTimeoutMS=5000)
-            db = client.get_database()
+            try:
+                client = MongoClient(db_uri, serverSelectionTimeoutMS=5000)
+            except Exception as conn_error:
+                sys.stderr.write(f"   ✗ ERROR: Failed to connect to MongoDB: {str(conn_error)}\n")
+                import pandas as pd
+                return pd.DataFrame(columns=['user_id', 'product_id', 'rating']), 0
+            
+            # Extract database name from URI or find it automatically
+            # MongoDB URI format: mongodb+srv://user:pass@host/database?options
+            db_name = None
+            try:
+                # Try to get database name from URI (after @ and before ?)
+                if '@' in db_uri:
+                    uri_part = db_uri.split('@')[-1]
+                    if '?' in uri_part:
+                        uri_part = uri_part.split('?')[0]
+                    if '/' in uri_part and uri_part.split('/')[-1]:
+                        db_name = uri_part.split('/')[-1]
+            except:
+                pass
+            
+            # If no database name in URI, try to find database with interactions
+            if not db_name or db_name == '':
+                sys.stderr.write(f"   No database name in URI, searching for database with interactions...\n")
+                try:
+                    # List all databases and find one with interactions collection
+                    db_list = client.list_database_names()
+                    sys.stderr.write(f"   Found databases: {', '.join(db_list)}\n")
+                    
+                    # Try common database names first
+                    for test_db_name in ['buyonix', 'test', 'fyp']:
+                        if test_db_name in db_list:
+                            test_db = client[test_db_name]
+                            if 'interactions' in test_db.list_collection_names():
+                                count = test_db['interactions'].count_documents({})
+                                if count > 0:
+                                    db_name = test_db_name
+                                    sys.stderr.write(f"   ✓ Found {count} interactions in database '{db_name}'\n")
+                                    break
+                    
+                    # If still not found, check all databases
+                    if not db_name:
+                        for test_db_name in db_list:
+                            test_db = client[test_db_name]
+                            if 'interactions' in test_db.list_collection_names():
+                                count = test_db['interactions'].count_documents({})
+                                if count > 0:
+                                    db_name = test_db_name
+                                    sys.stderr.write(f"   ✓ Found {count} interactions in database '{test_db_name}'\n")
+                                    break
+                    
+                    # Default fallback
+                    if not db_name:
+                        db_name = 'buyonix'
+                        sys.stderr.write(f"   Using default database: {db_name}\n")
+                except Exception as search_error:
+                    sys.stderr.write(f"   ⚠️  Could not search databases: {str(search_error)}\n")
+                    db_name = 'buyonix'  # Default fallback
+            
+            sys.stderr.write(f"   Using database: {db_name}\n")
+            
+            try:
+                db = client[db_name]  # Use bracket notation to specify database
+            except Exception as db_error:
+                sys.stderr.write(f"   ✗ ERROR: Failed to access database '{db_name}': {str(db_error)}\n")
+                import pandas as pd
+                return pd.DataFrame(columns=['user_id', 'product_id', 'rating']), 0
             
             interactions_collection = db['interactions']
             
@@ -329,16 +398,7 @@ class CFIntegration:
 
 
 if __name__ == "__main__":
-    # Initialize integration (suppress output)
-    cf = CFIntegration()
-    
-    # Suppress stdout/stderr during initialization
-    old_stdout = sys.stdout
-    old_stderr = sys.stderr
-    sys.stdout = SuppressPrint()
-    sys.stderr = SuppressPrint()
-    
-    # Check if product and user counts were passed as arguments
+    # Check if product and user counts were passed as arguments FIRST
     n_products = None
     n_users = None
     db_uri_arg = None
@@ -362,22 +422,40 @@ if __name__ == "__main__":
     else:
         cf = CFIntegration()
     
+    # Suppress stdout/stderr during initialization (but keep stderr for errors)
+    old_stdout = sys.stdout
+    old_stderr = sys.stderr
+    sys.stdout = SuppressPrint()
+    # Don't suppress stderr completely - we need to see errors
+    
     try:
         init_success = cf.initialize(n_products=n_products, n_users=n_users)
     except Exception as init_error:
         # Return a JSON error but exit with code 0 so Node can handle gracefully
         sys.stdout = old_stdout
         sys.stderr = old_stderr
-        print(json.dumps({"success": False, "error": f"Initialization error: {str(init_error)}"}))
+        import traceback
+        error_details = traceback.format_exc()
+        print(json.dumps({"success": False, "error": f"Initialization error: {str(init_error)}", "details": error_details}))
         sys.exit(0)
     finally:
         sys.stdout = old_stdout
         sys.stderr = old_stderr
     
     if not init_success:
-        # Not enough interactions or other non-fatal issue.
+        # Get more details about why it failed
+        try:
+            real_interactions_df, interaction_count = cf.get_real_interactions()
+            error_msg = f"Failed to initialize model. Found {interaction_count} interactions. "
+            if interaction_count == 0:
+                error_msg += "No interactions found in MongoDB. Make sure interactions are being saved."
+            else:
+                error_msg += "Model initialization failed for unknown reason."
+        except Exception as e:
+            error_msg = f"Failed to initialize model. Error reading interactions: {str(e)}"
+        
         # Return JSON describing the problem, but do NOT exit with error code.
-        print(json.dumps({"success": False, "error": "Failed to initialize model (likely not enough interactions yet)"}))
+        print(json.dumps({"success": False, "error": error_msg}))
         sys.exit(0)
     
     # Get command from arguments

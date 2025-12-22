@@ -31,30 +31,31 @@ const Recommendations: React.FC = () => {
         setLoading(true);
         setError(null);
 
-        // 1. Get the actual user from localStorage
-        const storedUser = localStorage.getItem('user');
+        // 1. Get the actual user from localStorage (userInfo is set during login)
+        const userInfoStr = localStorage.getItem('userInfo');
         let userId = ''; 
 
-        if (storedUser) {
+        if (userInfoStr) {
           try {
-            const user = JSON.parse(storedUser);
-            userId = user._id;
+            const userInfo = JSON.parse(userInfoStr);
+            userId = userInfo.id || userInfo._id; // Use 'id' (from login response) or '_id'
           } catch (e) {
-            console.error("Error parsing user from localStorage", e);
+            console.error("Error parsing userInfo from localStorage", e);
           }
         }
 
-        // 2. IMPORTANT: If no valid userId exists, use a valid-format 24-char hex fallback
-        // 'user_1' was causing your CastError. This valid hex string will not.
+        // 2. Only fetch recommendations if user is logged in
         if (!userId || userId.length !== 24) {
-          userId = '65d8c12e9f1a2b3c4d5e6f78'; 
+          // User not logged in - don't show recommendations
+          setError('Please login to see personalized recommendations');
+          setLoading(false);
+          return;
         }
 
-        // 3. Fetch from the full BACKEND URL (to avoid the HTML/SyntaxError)
+        // 3. Fetch recommendations from CF model (trained on MongoDB Atlas interactions)
         const response = await fetch(`${BACKEND_URL}/product/recommendations/${userId}?num=6`);
         
         if (!response.ok) {
-          // If the server returns 404 or 500, this catches it
           const errorText = await response.text();
           console.error("Server Error Response:", errorText);
           throw new Error('Failed to fetch recommendations');
@@ -62,10 +63,11 @@ const Recommendations: React.FC = () => {
 
         const data = await response.json();
         
-        if (data.success && data.recommendations) {
+        if (data.success && data.recommendations && data.recommendations.length > 0) {
           setRecommendations(data.recommendations);
         } else {
-          setError('No recommendations available');
+          // No recommendations available (user might not have enough interactions yet)
+          setError('No personalized recommendations available yet');
         }
       } catch (err) {
         console.error('Error fetching recommendations:', err);
@@ -93,8 +95,13 @@ const Recommendations: React.FC = () => {
     );
   }
 
+  // Don't show anything if user is not logged in or no recommendations
+  if (error && error.includes('Please login')) {
+    return null; // Hide section if user not logged in
+  }
+
   if (error || recommendations.length === 0) {
-    return null; 
+    return null; // Hide section if no recommendations
   }
 
   return (
@@ -163,7 +170,7 @@ const Recommendations: React.FC = () => {
 
                 <div className="mb-3">
                   <span className="text-lg font-bold text-gray-900">
-                    Rs. {product.price?.toLocaleString()}
+                    $. {product.price?.toLocaleString()}
                   </span>
                 </div>
 
