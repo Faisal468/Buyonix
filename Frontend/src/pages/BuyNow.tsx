@@ -445,25 +445,30 @@ const BuyNow: React.FC = () => {
             <div className="bg-white rounded-lg shadow p-6 sticky top-6 space-y-6">
               <h2 className="text-xl font-bold text-gray-900">Order Summary</h2>
 
-              {mainProduct && (
-                <div className="flex gap-4 pb-4 border-b border-gray-200">
-                  <div className="w-20 h-20 bg-gray-200 rounded flex-shrink-0">
-                    {mainProduct.images && mainProduct.images.length > 0 ? (
-                      <img
-                        src={typeof mainProduct.images[0] === 'string'
-                          ? mainProduct.images[0]
-                          : (mainProduct.images[0] as { url?: string })?.url || ''}
-                        alt={mainProduct.name}
-                        className="w-full h-full object-cover rounded"
-                      />
-                    ) : null}
+              {/* All Products in Cart */}
+              <div className="space-y-3 pb-4 border-b border-gray-200 max-h-96 overflow-y-auto">
+                {cartItems.map((item) => (
+                  <div key={item._id} className="flex gap-3">
+                    <div className="w-16 h-16 bg-gray-200 rounded flex-shrink-0">
+                      {item.images && item.images.length > 0 ? (
+                        <img
+                          src={typeof item.images[0] === 'string'
+                            ? item.images[0]
+                            : (item.images[0] as { url?: string })?.url || ''}
+                          alt={item.name}
+                          className="w-full h-full object-cover rounded"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-gray-400 text-xs">No image</div>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold text-gray-900 text-sm line-clamp-2">{item.name}</h3>
+                      <p className="text-teal-600 font-bold text-sm">${item.price.toFixed(2)} × {item.quantity}</p>
+                    </div>
                   </div>
-                  <div className="flex-1">
-                    <h3 className="font-semibold text-gray-900 text-sm">{mainProduct.name}</h3>
-                    <p className="text-teal-600 font-bold">${mainProduct.price.toFixed(2)}</p>
-                  </div>
-                </div>
-              )}
+                ))}
+              </div>
 
               <div className="space-y-3">
                 <div className="flex justify-between text-sm text-gray-600">
