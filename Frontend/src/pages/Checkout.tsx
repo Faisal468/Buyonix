@@ -2,20 +2,7 @@ import React, { useContext, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CartContext } from '../context/CartContextType';
 import { FaTrash, FaArrowLeft, FaHeart } from 'react-icons/fa';
-import { trackCartAdd } from '../utils/interactionTracking';
-
-interface Product {
-  _id: string;
-  name: string;
-  price: number;
-  originalPrice?: number;
-  discount?: number;
-  images?: string[];
-  rating?: number;
-  reviewCount?: number;
-  predictedRating?: number;
-  reason?: string;
-}
+import Recommendations from '../components/Recommendations';
 
 interface WishlistItem {
   _id: string;
@@ -28,7 +15,6 @@ interface WishlistItem {
 const Checkout: React.FC = () => {
   const cartContext = useContext(CartContext);
   const navigate = useNavigate();
-  const [relatedProducts, setRelatedProducts] = useState<Product[]>([]);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [isTryOnOpen, setIsTryOnOpen] = useState(false);
   const [tryOnInputImage, setTryOnInputImage] = useState<string | null>(null);
@@ -112,44 +98,6 @@ const Checkout: React.FC = () => {
     }
   }, [mainProduct]);
 
-  // Fetch related products on mount
-  useEffect(() => {
-    const fetchRelatedProducts = async () => {
-      try {
-        // Try to get AI-powered recommendations first using a mock user ID
-        // In production, you'd get the actual userId from auth context
-        const userId = localStorage.getItem('buyonix_user_id') || 'user_1';
-        
-        const response = await fetch(`http://localhost:5000/product/related/${userId}?num=4`);
-        const result = await response.json();
-        
-        if (result.relatedProducts && result.relatedProducts.length > 0) {
-          setRelatedProducts(result.relatedProducts);
-        } else {
-          // Fallback to random products if no recommendations
-          const fallbackResponse = await fetch('http://localhost:5000/product?limit=4');
-          const fallbackResult = await fallbackResponse.json();
-          if (fallbackResult.products) {
-            setRelatedProducts(fallbackResult.products);
-          }
-        }
-      } catch (error) {
-        console.error('Error fetching related products:', error);
-        // Fallback: try basic product fetch
-        try {
-          const response = await fetch('http://localhost:5000/product?limit=4');
-          const result = await response.json();
-          if (result.products) {
-            setRelatedProducts(result.products);
-          }
-        } catch (fallbackError) {
-          console.error('Error fetching fallback products:', fallbackError);
-        }
-      }
-    };
-
-    fetchRelatedProducts();
-  }, []);
 
   if (!cartContext) {
     return null;
@@ -622,128 +570,8 @@ const Checkout: React.FC = () => {
           </div>
         )}
 
-        {/* Related Products Recommendations */}
-        {relatedProducts.length > 0 && (
-          <div className="mb-8">
-            <div className="flex items-center gap-2 mb-6">
-              <h2 className="text-2xl font-bold text-gray-900"> Product Recommendations</h2>
-              <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">Based on your history</span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-              {relatedProducts.map((product: Product) => {
-                const imageUrl = product.images?.[0] || 'https://via.placeholder.com/250';
-
-                return (
-                  <div key={product._id} className="bg-white rounded-lg shadow hover:shadow-lg transition-shadow overflow-hidden group">
-                    {/* Image Container */}
-                    <div className="h-48 bg-gray-100 relative overflow-hidden">
-                      {product.discount && product.discount > 0 && (
-                        <div className="absolute top-3 right-3 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded">
-                          -{product.discount}%
-                        </div>
-                      )}
-                      {product.predictedRating && (
-                        <div className="absolute top-3 left-3 bg-blue-500 text-white text-xs font-bold px-2 py-1 rounded">
-                          ⭐ {product.predictedRating.toFixed(1)}
-                        </div>
-                      )}
-                      <img
-                        src={typeof imageUrl === 'string' ? imageUrl : (imageUrl as { url?: string })?.url || ''}
-                        alt={product.name}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                      />
-                    </div>
-
-                    {/* Product Info */}
-                    <div className="p-4">
-                      <h3 className="font-semibold text-gray-900 text-sm line-clamp-2 mb-2">{product.name}</h3>
-
-                      {/* Show recommendation reason */}
-                      {product.reason && (
-                        <p className="text-xs text-blue-600 mb-2 italic">{product.reason}</p>
-                      )}
-
-                      {/* Rating */}
-                      {product.rating && (
-                        <div className="flex items-center gap-1 mb-2">
-                          <span className="text-yellow-400 text-sm">★</span>
-                          <span className="text-xs text-gray-600">{product.rating.toFixed(1)}</span>
-                        </div>
-                      )}
-
-                      {/* Price */}
-                      <div className="mb-3">
-                        <p className="text-teal-600 font-bold text-lg">$ {product.price.toFixed(2)}</p>
-                      </div>
-
-                      {/* Add to Cart Button */}
-                      <button
-                        onClick={async () => {
-                          if (cartContext) {
-                            // Track cart addition with weight: 2
-                            await trackCartAdd(product._id);
-                            
-                            cartContext.addToCart({
-                              _id: product._id,
-                              name: product.name,
-                              price: product.price,
-                              quantity: 1,
-                              images: product.images || [],
-                            });
-                          }
-                        }}
-                        className="w-full bg-teal-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-teal-700 transition-colors"
-                      >
-                        Add to cart
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Customer Reviews Section */}
-        <div className="bg-white rounded-lg shadow p-8">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold text-gray-900">Customer Reviews</h2>
-            <div className="flex items-center gap-4">
-              <div className="text-center">
-                <p className="text-4xl font-bold text-yellow-400">4.5</p>
-                <p className="text-sm text-gray-600">out of 5</p>
-              </div>
-              <div className="flex text-yellow-400 text-2xl">
-                {[...Array(5)].map((_, i) => (
-                  <span key={i}>★</span>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Sample Reviews */}
-          <div className="space-y-4 border-t border-gray-200 pt-6">
-            {[1, 2, 3].map((review) => (
-              <div key={review} className="flex gap-4 pb-4 border-b border-gray-200 last:border-b-0">
-                <div className="w-10 h-10 rounded-full bg-teal-600 text-white flex items-center justify-center font-bold">
-                  A
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <p className="font-semibold text-gray-900 text-sm">John Doe</p>
-                    <div className="flex text-yellow-400 text-sm">
-                      {[...Array(5)].map((_, i) => (
-                        <span key={i}>★</span>
-                      ))}
-                    </div>
-                  </div>
-                  <p className="text-xs text-gray-500 mb-1">2 days ago</p>
-                  <p className="text-sm text-gray-700">Great product! Excellent quality and fast delivery. Highly satisfied with the purchase and would definitely recommend.</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        {/* Personalized Recommendations (Same as Home Page) */}
+        <Recommendations />
       </div>
       {isTryOnOpen && mainProduct && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 py-10">
