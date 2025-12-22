@@ -1,7 +1,7 @@
 import { FaSearch, FaShoppingCart, FaUser, FaStore, FaSignOutAlt } from "react-icons/fa";
 import { BsCamera } from "react-icons/bs";
-import { Link, useNavigate } from "react-router-dom"; // Import Link and useNavigate from react-router-dom
-import { useState, useEffect, useRef, useContext } from "react"; // Import hooks for state management
+import { Link, useNavigate } from "react-router-dom"; 
+import { useState, useEffect, useRef, useContext } from "react"; 
 import logo from "../assets/logo.png";
 import { checkAuthStatus } from "../utils/auth.js";
 import { CartContext } from "../context/CartContextType";

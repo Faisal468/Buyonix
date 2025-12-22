@@ -33,7 +33,7 @@ const Recommendations: React.FC = () => {
 
         // 1. Get the actual user from localStorage
         const storedUser = localStorage.getItem('user');
-        let userId = '';
+        let userId = ''; 
 
         if (storedUser) {
           try {
