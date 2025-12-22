@@ -1,0 +1,9 @@
+{
+    "ignore": [
+      "ai_models/*.pkl",
+      "ai_models/*.json",
+      "node_modules/*",
+      "*.test.js"
+    ],
+    "delay": "2500"
+  }

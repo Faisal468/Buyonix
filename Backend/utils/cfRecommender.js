@@ -166,6 +166,11 @@ class CFRecommender {
         args.push(`n_users=${userCount}`);
       }
       
+      // Pass DB_URI from environment to Python
+      if (process.env.DB_URI) {
+        args.push(`db_uri=${process.env.DB_URI}`);
+      }
+      
       const python = spawn('python', args);
 
       let output = '';
@@ -176,12 +181,15 @@ class CFRecommender {
       });
 
       python.stderr.on('data', (data) => {
-        error += data.toString();
+        const errorMsg = data.toString();
+        error += errorMsg;
+        // Print stderr to console so we can see what's happening
+        console.log('Python stderr:', errorMsg);
       });
 
       python.on('close', (code) => {
         if (code !== 0) {
-          return reject(new Error(`Python script failed: ${error}`));
+          return reject(new Error(`Python script failed: ${error || 'No error message'}`));
         }
 
         try {
@@ -195,7 +203,7 @@ class CFRecommender {
             reject(new Error('Unknown error from Python model'));
           }
         } catch (parseError) {
-          reject(new Error(`Failed to parse Python output: ${parseError.message}`));
+          reject(new Error(`Failed to parse Python output: ${parseError.message}. Output: ${output}`));
         }
       });
     });
@@ -223,12 +231,19 @@ class CFRecommender {
           console.log(`  ℹ️  Building new model with ${userCount} users, ${productCount} products`);
           
           // Call Python to build and save new model with current counts
-          const python = spawn('python', [
+          const args = [
             CF_INTEGRATION_SCRIPT,
             'stats',
             `n_products=${productCount}`,
             `n_users=${userCount}`
-          ]);
+          ];
+          
+          // Pass DB_URI from environment to Python
+          if (process.env.DB_URI) {
+            args.push(`db_uri=${process.env.DB_URI}`);
+          }
+          
+          const python = spawn('python', args);
 
           let output = '';
           let error = '';
@@ -238,7 +253,10 @@ class CFRecommender {
           });
 
           python.stderr.on('data', (data) => {
-            error += data.toString();
+            const errorMsg = data.toString();
+            error += errorMsg;
+            // Print stderr to console so we can see what's happening
+            console.log('Python stderr:', errorMsg);
           });
 
           python.on('close', (code) => {

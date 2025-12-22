@@ -82,17 +82,45 @@ class CFIntegration:
             from pymongo import MongoClient
             import pandas as pd
             
-            db_uri = self.db_uri or os.getenv('DB_URI', 'mongodb://localhost:27017/buyonix')
-            client = MongoClient(db_uri, serverSelectionTimeoutMS=2000)
+            # Try to get DB_URI from multiple sources
+            db_uri = self.db_uri
+            if not db_uri:
+                # Check environment variable
+                db_uri = os.getenv('DB_URI')
+            if not db_uri:
+                # Try reading from .env file
+                try:
+                    env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
+                    if os.path.exists(env_path):
+                        with open(env_path, 'r') as f:
+                            for line in f:
+                                if line.startswith('DB_URI='):
+                                    db_uri = line.split('=', 1)[1].strip().strip('"').strip("'")
+                                    break
+                except:
+                    pass
+            if not db_uri:
+                # Default fallback
+                db_uri = 'mongodb://localhost:27017/buyonix'
+            
+            # Write error to stderr so it's not suppressed
+            import sys
+            sys.stderr.write(f"\n📊 Connecting to MongoDB: {db_uri[:50]}...\n")
+            
+            client = MongoClient(db_uri, serverSelectionTimeoutMS=5000)
             db = client.get_database()
             
             interactions_collection = db['interactions']
+            
+            # Count total interactions first
+            total_count = interactions_collection.count_documents({})
+            sys.stderr.write(f"   Total interactions in DB: {total_count}\n")
             
             # Get all interactions from database
             interactions = interactions_collection.find()
             interaction_data = []
             
-            print(f"\n📊 Reading interactions from MongoDB...")
+            sys.stderr.write(f"   Reading interactions from MongoDB...\n")
             
             for interaction in interactions:
                 try:
@@ -113,12 +141,14 @@ class CFIntegration:
                             'rating': cf_rating
                         })
                 except Exception as e:
+                    sys.stderr.write(f"   ⚠️  Skipped interaction due to error: {str(e)}\n")
                     continue
             
             client.close()
             
             if len(interaction_data) == 0:
-                print("   ⚠️  No interactions found in database")
+                sys.stderr.write(f"   ⚠️  No valid interactions found (total in DB: {total_count})\n")
+                import pandas as pd
                 return pd.DataFrame(columns=['user_id', 'product_id', 'rating']), 0
             
             # Convert to DataFrame
@@ -133,13 +163,16 @@ class CFIntegration:
             unique_users = df_aggregated['user_id'].nunique()
             unique_products = df_aggregated['product_id'].nunique()
             
-            print(f"   ✓ Found {interaction_count} unique user-product interactions")
-            print(f"   ✓ {unique_users} unique users")
-            print(f"   ✓ {unique_products} unique products")
+            sys.stderr.write(f"   ✓ Found {interaction_count} unique user-product interactions\n")
+            sys.stderr.write(f"   ✓ {unique_users} unique users\n")
+            sys.stderr.write(f"   ✓ {unique_products} unique products\n")
             
             return df_aggregated, interaction_count
         except Exception as e:
-            print(f"   ✗ Error reading interactions: {str(e)}")
+            import sys
+            import traceback
+            sys.stderr.write(f"   ✗ Error reading interactions: {str(e)}\n")
+            sys.stderr.write(f"   Traceback: {traceback.format_exc()}\n")
             import pandas as pd
             return pd.DataFrame(columns=['user_id', 'product_id', 'rating']), 0
     
@@ -170,9 +203,10 @@ class CFIntegration:
                 # train a synthetic model (to avoid fake product IDs like "product_1").
                 real_interactions_df, interaction_count = self.get_real_interactions()
 
-                if interaction_count < 10:
-                    # Not enough real data → don't initialize model, let caller fall back.
-                    # This prevents training on synthetic IDs that don't match MongoDB.
+                # Require at least 1 real interaction to train.
+                # (Previously 10 – too strict for small FYP datasets.)
+                if interaction_count < 1:
+                    # No real data → don't initialize model, let caller fall back.
                     self.is_initialized = False
                     return False
 
@@ -259,10 +293,11 @@ class CFIntegration:
             # Get real interactions
             real_interactions_df, interaction_count = self.get_real_interactions()
             
-            if interaction_count < 10:
+            # Require at least 1 interaction to retrain
+            if interaction_count < 1:
                 return {
                     "success": False,
-                    "message": f"Need at least 10 interactions. Found: {interaction_count}",
+                    "message": f"Need at least 1 interaction. Found: {interaction_count}",
                     "interaction_count": interaction_count
                 }
             
@@ -305,6 +340,7 @@ if __name__ == "__main__":
     # Check if product and user counts were passed as arguments
     n_products = None
     n_users = None
+    db_uri_arg = None
     for arg in sys.argv:
         if arg.startswith('n_products='):
             try:
@@ -316,6 +352,14 @@ if __name__ == "__main__":
                 n_users = int(arg.split('=')[1])
             except:
                 pass
+        elif arg.startswith('db_uri='):
+            db_uri_arg = arg.split('=', 1)[1]
+    
+    # Pass DB_URI to CFIntegration if provided
+    if db_uri_arg:
+        cf = CFIntegration(db_uri=db_uri_arg)
+    else:
+        cf = CFIntegration()
     
     try:
         init_success = cf.initialize(n_products=n_products, n_users=n_users)
