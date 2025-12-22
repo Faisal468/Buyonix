@@ -34,7 +34,7 @@ class CFIntegration:
             from pymongo import MongoClient
             
             # Extract MongoDB connection string from environment or use default
-            db_uri = self.db_uri or os.getenv('DB_URI', 'mongodb://localhost:27017/buyonix')
+            db_uri = self.db_uri or os.getenv('DB_URI')
             client = MongoClient(db_uri, serverSelectionTimeoutMS=2000)
             db = client.get_database()
             product_count = db['products'].count_documents({'status': 'active'})
@@ -101,7 +101,8 @@ class CFIntegration:
                     pass
             if not db_uri:
                 # Default fallback
-                db_uri = 'mongodb://localhost:27017/buyonix'
+                # Look for DB_URI specifically since that is what is in your .env
+                  db_uri = os.getenv('DB_URI')
             
             # Write error to stderr so it's not suppressed
             import sys
