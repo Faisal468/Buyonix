@@ -45,12 +45,19 @@ router.post("/chat", async (req, res) => {
       "discount", "stock", "available", "search", "find", "looking for", "want", "need",
       "show", "recommend", "best", "good", "cheap", "expensive", "deal", "sale", "offer",
       "smartphone", "laptop", "electronics", "clothing", "book", "home", "garden", 
-      "beauty", "health", "sports", "toys", "food", "delivery", "shipping"
+      "beauty", "health", "sports", "toys", "food", "delivery", "shipping",
+      // Quality and evaluation related terms
+      "quality", "review", "rating", "feedback", "opinion", "experience", "recommend",
+      "worth", "value", "compare", "comparison", "versus", "vs", "better", "worse",
+      "durability", "reliable", "warranty", "guarantee", "return", "refund",
+      "specification", "spec", "feature", "brand", "model", "size", "color",
+      "material", "dimension", "weight", "performance", "efficiency"
     ];
     
     const greetingKeywords = [
       "hi", "hello", "hey", "good morning", "good afternoon", "good evening",
-      "what can you do", "help", "support", "how are you", "what", "who", "when", "where", "why", "how"
+      "what can you do", "help", "support", "how are you", "what", "who", "when", "where", "why", "how",
+      "thanks", "thank you", "please", "can you", "could you", "would you"
     ];
     
     const isProductRelated = productKeywords.some((keyword) =>
@@ -61,11 +68,22 @@ router.post("/chat", async (req, res) => {
       message.toLowerCase().includes(keyword)
     );
 
-    // Only redirect if it's clearly not product-related AND not a greeting/general query
-    if (!isProductRelated && !isGreetingOrGeneral && message.length > 3) {
-      console.log("Redirecting non-product message:", message);
+    // Define clearly off-topic keywords
+    const offTopicKeywords = [
+      "weather", "politics", "sports news", "recipe", "cooking", "movie", "music", "travel",
+      "medical advice", "legal advice", "homework", "school", "university", "job", "career",
+      "relationship", "dating", "personal problem", "news", "current events", "celebrity"
+    ];
+
+    const isClearlyOffTopic = offTopicKeywords.some((keyword) =>
+      message.toLowerCase().includes(keyword)
+    );
+
+    // Only redirect if it's clearly off-topic AND not product-related AND not a greeting/general query
+    if (isClearlyOffTopic && !isProductRelated && !isGreetingOrGeneral && message.length > 10) {
+      console.log("Redirecting clearly off-topic message:", message);
       
-      const redirectResponse = "I'm a shopping assistant bot focused on helping you with product information, searches, and purchase queries. How can I help you find the perfect product today?";
+      const redirectResponse = "I can only talk about products, shopping, prices, and helping you find the perfect items to buy. What product are you looking for today? 🛍️";
       
       // Save bot response
       if (chatSession) {
@@ -127,11 +145,13 @@ router.post("/chat", async (req, res) => {
     const systemPrompt = `You are a helpful shopping assistant for Buyonix online store. 
 
 Rules:
-- Answer greetings warmly, then guide to product help
-- Focus on products, prices, recommendations, availability  
-- Be concise (max 100 words)
-- Use available products if relevant: ${productContext || "No specific products loaded"}
-- For non-shopping topics, politely redirect to shopping assistance
+- Answer all product-related questions including quality, reviews, comparisons, specifications
+- Help with product searches, recommendations, pricing, and availability
+- Provide helpful information about products even if not specifically in our database
+- For greetings, respond warmly and offer shopping assistance
+- Be conversational and helpful (max 150 words)
+- Available products context: ${productContext || "No specific products loaded - but still help with general product questions"}
+- Only redirect to shopping topics if user asks about completely unrelated topics like weather, politics, or personal issues
 
 User: ${message}`;
 
@@ -148,10 +168,10 @@ User: ${message}`;
         },
       ],
       generationConfig: {
-        maxOutputTokens: 150, // Limit response tokens
-        temperature: 0.3, // Lower temperature for more focused responses
-        topP: 0.8,
-        topK: 10,
+        maxOutputTokens: 250, // Increased for more detailed responses
+        temperature: 0.5, // Slightly higher for more natural responses
+        topP: 0.9,
+        topK: 20,
       },
     };
 
@@ -199,7 +219,7 @@ User: ${message}`;
       console.error('Network Error:', error.message);
     }
     
-    const errorMessage = "I'm having trouble right now. Please try again in a moment.";
+    const errorMessage = "I can only help you with shopping and product questions. What would you like to know about our products?";
     
     // Save error response if we have a chat session
     const { userId, sessionId } = req.body;
@@ -214,11 +234,11 @@ User: ${message}`;
       console.error("Error saving error message to chat:", chatError);
     }
     
-    res.status(500).json({
-      success: false,
-      error: errorMessage,
-      details:
-        process.env.NODE_ENV === "development" ? error.message : undefined,
+    res.json({
+      success: true,
+      response: errorMessage,
+      type: "error_redirect",
+      chatId: chatSession?._id
     });
   }
 });
@@ -294,17 +314,21 @@ router.get("/capabilities", (req, res) => {
     success: true,
     capabilities: [
       "Product search and recommendations",
-      "Price comparisons",
+      "Product quality assessments and reviews",
+      "Price comparisons and value analysis",
       "Stock availability checks",
-      "Category browsing",
+      "Product specifications and features",
+      "Brand and model comparisons",
+      "Category browsing and suggestions",
       "Deal and discount information",
-      "Product specifications",
+      "Shopping advice and guidance",
       "Conversation history storage"
     ],
     limitations: [
-      "Only responds to product and shopping queries",
-      "Cannot process orders or payments",
+      "Only responds to shopping and product-related queries",
+      "Cannot process orders or payments directly",
       "Cannot access personal account information",
+      "Does not provide medical, legal, or personal advice"
     ],
   });
 });
