@@ -6,9 +6,28 @@ const Interaction = require('../models/interaction');
 const CFRecommender = require('../utils/cfRecommender');
 const fs = require('fs');
 const path = require('path');
+const multer = require('multer');
+const sharp = require('sharp');
+const imageHash = require('image-hash');
+const crypto = require('crypto');
+const axios = require('axios');
 
 // Initialize CF recommender
 const cfRecommender = new CFRecommender();
+
+// Configure multer for image uploads
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage: storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed'), false);
+    }
+  }
+});
 
 // Get all products (for frontend home page) with pagination
 router.get("/", async (req, res) => {
@@ -777,6 +796,225 @@ router.get("/interactions/summary", async (req, res) => {
         });
     }
 });
+
+/**
+ * POST /product/visual-search
+ * Visual search endpoint - accepts image upload and finds similar products
+ * Uses perceptual hashing to compare images
+ */
+router.post("/visual-search", upload.single('image'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "No image file provided"
+      });
+    }
+
+    // Process uploaded image with sharp first (resize and normalize)
+    let processedImageBuffer;
+    try {
+      processedImageBuffer = await sharp(req.file.buffer)
+        .resize(256, 256, { fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 90 })
+        .toBuffer();
+    } catch (error) {
+      // If sharp fails, use original buffer
+      processedImageBuffer = req.file.buffer;
+    }
+
+    // Generate hash for uploaded image
+    // Save buffer to temp file for image-hash library (it requires file path)
+    const tempDir = path.join(__dirname, '..', 'temp');
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+    const tempFilePath = path.join(tempDir, `upload_${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`);
+    fs.writeFileSync(tempFilePath, processedImageBuffer);
+
+    const uploadedImageHash = await new Promise((resolve, reject) => {
+      imageHash.imageHash(tempFilePath, 16, true, (error, hash) => {
+        // Clean up temp file
+        try {
+          if (fs.existsSync(tempFilePath)) {
+            fs.unlinkSync(tempFilePath);
+          }
+        } catch (cleanupError) {
+          console.warn('Error cleaning up temp file:', cleanupError);
+        }
+
+        if (error) {
+          console.error('Error generating hash for uploaded image:', error);
+          reject(error);
+        } else {
+          resolve(hash);
+        }
+      });
+    });
+
+    // Get all active products with images
+    const products = await Product.find({ 
+      status: 'active',
+      images: { $exists: true, $ne: [] }
+    }).populate('sellerId', 'storeName businessName');
+
+    if (products.length === 0) {
+      return res.status(200).json({
+        success: true,
+        message: "No products available in store",
+        products: [],
+        found: false
+      });
+    }
+
+    // Calculate similarity for each product
+    const productMatches = [];
+    
+    for (const product of products) {
+      if (!product.images || product.images.length === 0) continue;
+
+      let bestMatch = null;
+      let bestSimilarity = 0;
+
+      // Compare with all product images
+      for (const imageUrl of product.images) {
+        try {
+          let imageBuffer;
+          
+          // Handle base64 images or URLs
+          if (imageUrl.startsWith('data:image')) {
+            // Base64 image
+            const base64Data = imageUrl.split(',')[1];
+            imageBuffer = Buffer.from(base64Data, 'base64');
+          } else {
+            // URL image - fetch it
+            const imageResponse = await axios.get(imageUrl, {
+              responseType: 'arraybuffer',
+              timeout: 5000
+            });
+            imageBuffer = Buffer.from(imageResponse.data);
+          }
+
+          // Process product image with sharp first
+          let processedProductBuffer;
+          try {
+            processedProductBuffer = await sharp(imageBuffer)
+              .resize(256, 256, { fit: 'inside', withoutEnlargement: true })
+              .jpeg({ quality: 90 })
+              .toBuffer();
+          } catch (error) {
+            // If sharp fails, use original buffer
+            processedProductBuffer = imageBuffer;
+          }
+
+          // Save buffer to temp file for image-hash library (it requires file path)
+          const tempDir = path.join(__dirname, '..', 'temp');
+          if (!fs.existsSync(tempDir)) {
+            fs.mkdirSync(tempDir, { recursive: true });
+          }
+          const productTempFilePath = path.join(tempDir, `product_${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`);
+          fs.writeFileSync(productTempFilePath, processedProductBuffer);
+
+          // Generate hash for product image
+          const productImageHash = await new Promise((resolve, reject) => {
+            imageHash.imageHash(productTempFilePath, 16, true, (error, hash) => {
+              // Clean up temp file
+              try {
+                if (fs.existsSync(productTempFilePath)) {
+                  fs.unlinkSync(productTempFilePath);
+                }
+              } catch (cleanupError) {
+                console.warn('Error cleaning up temp file:', cleanupError);
+              }
+
+              if (error) {
+                console.warn('Error generating hash for product image:', error);
+                reject(error);
+              } else {
+                resolve(hash);
+              }
+            });
+          });
+
+          // Calculate Hamming distance (lower = more similar)
+          const hammingDistance = calculateHammingDistance(uploadedImageHash, productImageHash);
+          
+          // Convert to similarity score (0-100, higher = more similar)
+          // For 16-bit hash, max distance is 16
+          const similarity = Math.max(0, (1 - hammingDistance / 16) * 100);
+
+          if (similarity > bestSimilarity) {
+            bestSimilarity = similarity;
+            bestMatch = {
+              product: product.toObject(),
+              similarity: similarity,
+              matchedImage: imageUrl
+            };
+          }
+        } catch (error) {
+          // Skip images that can't be fetched
+          console.warn(`Could not process image ${imageUrl}:`, error.message);
+          continue;
+        }
+      }
+
+      if (bestMatch && bestSimilarity > 25) { // Threshold: 25% similarity (lowered for better results)
+        productMatches.push(bestMatch);
+      }
+    }
+
+    // Sort by similarity (highest first)
+    productMatches.sort((a, b) => b.similarity - a.similarity);
+
+    // Return top 10 matches
+    const topMatches = productMatches.slice(0, 10);
+
+    if (topMatches.length === 0) {
+      return res.status(200).json({
+        success: true,
+        message: "Product not available in our store",
+        products: [],
+        found: false
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Found ${topMatches.length} similar product(s)`,
+      products: topMatches.map(m => ({
+        ...m.product,
+        similarity: Math.round(m.similarity),
+        matchedImage: m.matchedImage
+      })),
+      found: true
+    });
+
+  } catch (error) {
+    console.error("Visual search error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error processing visual search",
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Helper function to calculate Hamming distance between two hashes
+ */
+function calculateHammingDistance(hash1, hash2) {
+  if (hash1.length !== hash2.length) {
+    return Math.max(hash1.length, hash2.length);
+  }
+  
+  let distance = 0;
+  for (let i = 0; i < hash1.length; i++) {
+    if (hash1[i] !== hash2[i]) {
+      distance++;
+    }
+  }
+  return distance;
+}
 
 module.exports = router;
 

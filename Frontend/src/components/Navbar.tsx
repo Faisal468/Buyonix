@@ -5,6 +5,7 @@ import { useState, useEffect, useRef, useContext } from "react";
 import logo from "../assets/logo.png";
 import { checkAuthStatus } from "../utils/auth.js";
 import { CartContext } from "../context/CartContextType";
+import VisualSearchModal from "./VisualSearchModal";
 
 const Navbar = () => {
   // State to track if user is logged in
@@ -19,8 +20,8 @@ const Navbar = () => {
   
   // Get cart context
   const cartContext = useContext(CartContext);
-  // const [showVisualSearch, setShowVisualSearch] = useState(false);
-  // const [showVisualSearch, setShowVisualSearch] = useState<boolean>(false);
+  // Visual search modal state
+  const [showVisualSearch, setShowVisualSearch] = useState<boolean>(false);
 
 
   
@@ -212,11 +213,11 @@ const Navbar = () => {
           >
             <FaSearch className="text-gray-400" />
           </button>
-          <BsCamera className="text-teal-600 ml-2 text-lg" />
-          {/* <BsCamera
-  className="text-teal-600 ml-2 text-lg cursor-pointer"
-  onClick={() => setShowVisualSearch(true)}
-/> */}
+          <BsCamera 
+            className="text-teal-600 ml-2 text-lg cursor-pointer hover:text-teal-700 transition-colors"
+            onClick={() => setShowVisualSearch(true)}
+            title="Visual Search - Upload product image"
+          />
 
 
         </div>
@@ -307,8 +308,11 @@ const Navbar = () => {
         </div>
       </div>
 
-
-  
+      {/* Visual Search Modal */}
+      <VisualSearchModal 
+        isOpen={showVisualSearch}
+        onClose={() => setShowVisualSearch(false)}
+      />
     </nav>
   );
 };
