@@ -2,6 +2,7 @@ import { Routes, Route, useLocation } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import SignUp from './components/SignUp';
 import Login from './components/Login';
+import ForgotPassword from './components/ForgotPassword';
 import ShoppingCart from './components/ShoppingCart';
 import { CartProvider } from './context/CartContext';
 import SellerPortal from './seller/pages/SellerPortal.tsx';
@@ -52,6 +53,7 @@ function App() {
         <Route path="/" element={<Home />} />
         <Route path="/signup" element={<SignUp />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/signin" element={<Login />} /> {/* Alias for login */}
         <Route path="/about" element={<About />} />
         <Route path="/privacy-policy" element={<PrivacyPolicy />} />
