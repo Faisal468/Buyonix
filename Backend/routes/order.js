@@ -300,4 +300,83 @@ router.put('/:orderNumber/status', async (req, res) => {
   }
 });
 
+// Get User Orders
+router.get('/user-orders', async (req, res) => {
+  try {
+    // Get user ID from request
+    const userId = req.user?.id || req.query.userId;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'User ID is required'
+      });
+    }
+
+    // Find orders for this user
+    const orders = await Order.find({ 
+      'customerInfo.userId': userId 
+    }).sort({ createdAt: -1 });
+
+    // Also try finding by email if userId doesn't work
+    if (orders.length === 0) {
+      const userEmail = req.user?.email || req.query.email;
+      if (userEmail) {
+        const emailOrders = await Order.find({ 
+          'customerInfo.email': userEmail 
+        }).sort({ createdAt: -1 });
+        
+        return res.status(200).json({
+          success: true,
+          orders: emailOrders || [],
+          message: 'Orders retrieved successfully'
+        });
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      orders: orders || [],
+      message: 'Orders retrieved successfully'
+    });
+  } catch (error) {
+    console.error('Error fetching user orders:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching orders',
+      error: error.message
+    });
+  }
+});
+
+// Get single order
+router.get('/:orderId', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+
+    const order = await Order.findById(orderId);
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      order: order,
+      message: 'Order retrieved successfully'
+    });
+  } catch (error) {
+    console.error('Error fetching order:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching order',
+      error: error.message
+    });
+  }
+});
+
 module.exports = router;
+

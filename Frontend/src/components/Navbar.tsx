@@ -252,14 +252,14 @@ const Navbar = () => {
                   </div>
                   <div className="p-2">
                     <Link 
-                      to="/profile" 
+                      to="/my-profile" 
                       onClick={() => setShowDropdown(false)}
                       className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
                     >
                       My Profile
                     </Link>
                     <Link 
-                      to="/orders" 
+                      to="/my-orders" 
                       onClick={() => setShowDropdown(false)}
                       className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
                     >

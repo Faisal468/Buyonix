@@ -24,6 +24,9 @@ import PrivacyPolicy from './pages/PrivacyPolicy';
 import TermsOfService from './pages/TermsOfService';
 import BuyNow from './pages/BuyNow';
 import OrderConfirmation from './pages/OrderConfirmation';
+import Profile from './pages/Profile.tsx';
+import Orders from './pages/Orders.tsx';
+import Settings from './pages/Settings.tsx';
 import Footer from './components/Footer';
 // import Sidebar from './admin/components/Sidebar.tsx';;
 // import DashboardContent from './admin/components/DashboardContent.tsx';;
@@ -58,6 +61,10 @@ function App() {
         <Route path="/about" element={<About />} />
         <Route path="/privacy-policy" element={<PrivacyPolicy />} />
         <Route path="/terms-of-service" element={<TermsOfService />} />
+        {/* User Pages */}
+        <Route path="/my-profile" element={<Profile />} />
+        <Route path="/my-orders" element={<Orders />} />
+        <Route path="/settings" element={<Settings />} />
         {/* Add more routes as needed */}
         <Route path="/shop" element={<Shop />} />
         <Route path="/categories" element={<Categories />} />

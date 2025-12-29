@@ -632,4 +632,165 @@ router.get("/users", async (req, res) => {
     }
 });
 
+// Update User Profile
+router.post("/update-profile", async (req, res) => {
+    try {
+        const { displayName, email, phone } = req.body;
+        
+        if (!req.user) {
+            return res.status(401).json({
+                success: false,
+                message: "User not authenticated"
+            });
+        }
+
+        if (!displayName || !email) {
+            return res.status(400).json({
+                success: false,
+                message: "Name and email are required"
+            });
+        }
+
+        // Check if email is already used by another user
+        const existingUser = await User.findOne({ 
+            email: email,
+            _id: { $ne: req.user.id }
+        });
+
+        if (existingUser) {
+            return res.status(400).json({
+                success: false,
+                message: "Email is already in use"
+            });
+        }
+
+        // Update user
+        const user = await User.findByIdAndUpdate(
+            req.user.id,
+            {
+                displayName,
+                email,
+                phone: phone || ''
+            },
+            { new: true }
+        ).select('-password');
+
+        res.status(200).json({
+            success: true,
+            message: "Profile updated successfully",
+            user: {
+                id: user._id,
+                displayName: user.displayName,
+                email: user.email,
+                phone: user.phone,
+                createdAt: user.createdAt
+            }
+        });
+    } catch (error) {
+        console.error("Update profile error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Error updating profile"
+        });
+    }
+});
+
+// Change Password
+router.post("/change-password", async (req, res) => {
+    try {
+        const { currentPassword, newPassword } = req.body;
+        
+        if (!req.user) {
+            return res.status(401).json({
+                success: false,
+                message: "User not authenticated"
+            });
+        }
+
+        if (!currentPassword || !newPassword) {
+            return res.status(400).json({
+                success: false,
+                message: "Current and new password are required"
+            });
+        }
+
+        if (newPassword.length < 6) {
+            return res.status(400).json({
+                success: false,
+                message: "New password must be at least 6 characters"
+            });
+        }
+
+        // Get user with password field
+        const user = await User.findById(req.user.id);
+
+        if (!user || !user.password) {
+            return res.status(400).json({
+                success: false,
+                message: "User not found or account created with Google"
+            });
+        }
+
+        // Verify current password
+        const isPasswordValid = await bcrypt.compare(currentPassword, user.password);
+        
+        if (!isPasswordValid) {
+            return res.status(400).json({
+                success: false,
+                message: "Current password is incorrect"
+            });
+        }
+
+        // Hash new password
+        const hashedPassword = await bcrypt.hash(newPassword, 12);
+
+        // Update password
+        user.password = hashedPassword;
+        await user.save();
+
+        res.status(200).json({
+            success: true,
+            message: "Password changed successfully"
+        });
+    } catch (error) {
+        console.error("Change password error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Error changing password"
+        });
+    }
+});
+
+// Delete Account
+router.post("/delete-account", async (req, res) => {
+    try {
+        if (!req.user) {
+            return res.status(401).json({
+                success: false,
+                message: "User not authenticated"
+            });
+        }
+
+        // Delete user
+        await User.findByIdAndDelete(req.user.id);
+
+        // Logout user
+        req.logout((err) => {
+            if (err) {
+                return res.status(500).json({ success: false, message: "Error during logout" });
+            }
+            res.status(200).json({
+                success: true,
+                message: "Account deleted successfully"
+            });
+        });
+    } catch (error) {
+        console.error("Delete account error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Error deleting account"
+        });
+    }
+});
+
 module.exports = router;
